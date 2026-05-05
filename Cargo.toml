@@ -1,7 +1,18 @@
 [package]
 name = "libfetchxsrf"
 version = "0.1.0"
-edition = "2024"
+edition = "2024"                       
+description = "lightweight, blocking HTTP client library designed to simplify the process of fetching CSRF (Cross-Site Request Forgery) tokens and performing form-based logins"
+license = "MIT"
+repository = "https://github.com/neuxdotdev/libfetchxsrf"
+documentation = "https://docs.rs/libfetchxsrf"
+readme = "readme"
+homepage = "https://github.com/neuxdotdev/libfetchxsrf"
+keywords = ["xsrf", "csrf", "fetch", "scraper", "http"]
+categories = ["web-programming", "http-client"]
+authors = ["neuxdotdev <neuxdev1@gmail.com>"]
+include = ["src/**/*", "readme", "license", "Cargo.toml"]   
+exclude = ["tests/*", "examples/*", ".github/*"]
 
 [dependencies]
 log = "0.4.29"
@@ -15,3 +26,7 @@ url = "2.5.8"
 [dev-dependencies]
 httpmock = "0.8.3"
 tempfile = "3.27.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
