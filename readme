@@ -1,0 +1,4 @@
+libfetchxsrf
+============
+
+libfetchxsrf is a pure rust library without dependencies that can retrieve xsrf tokens from an html file or from a website
