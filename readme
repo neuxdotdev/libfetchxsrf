@@ -1,4 +1,551 @@
 libfetchxsrf
 ============
 
-libfetchxsrf is a pure rust library without dependencies that can retrieve xsrf tokens from an html file or from a website
+Automate CSRF token extraction and login on web forms with Rust.
+
+libfetchxsrf is a lightweight, blocking HTTP client library designed to simplify the process of fetching CSRF (Cross-Site Request Forgery) tokens and performing form-based logins. It's built on top of reqwest, scraper, and url, and provides both high-level convenience functions and a customizable builder for advanced use.
+
+  
+
+Table of Contents
+-----------------
+
+1.  [Features](features)
+2.  [Installation](installation)
+3.  [Quick Start](quick-start)
+4.  [API Reference](api-reference)
+       [Top-Level Functions](top-level-functions)
+       [XsrfClient](xsrfclient)
+       [SessionData](sessiondata)
+       [Credentials](credentials)
+       [CookieInfo](cookieinfo)
+       [OutputFormat](outputformat)
+       [SessionExt Trait](sessionext-trait)
+       [Error Types](error-types)
+5.  [Output Formats Explained](output-formats-explained)
+6.  [Customization](customization)
+7.  [Real-World Example](real-world-example)
+8.  [Testing](testing)
+9.  [Logging](logging)
+10.  [License](license)
+11.  [Contributing](contributing)
+
+  
+
+Features
+--------
+
+   Zero async: Uses reqwest::blocking, ideal for scripts and non-async applications.
+   CSRF token extraction: Parses HTML login forms with configurable token field name.
+   Full login flow: GET → extract token → POST with credentials, with automatic cookie management.
+   Multiple output formats: Raw text, JSON, shell environment variables, or save to file.
+   Customizable: Change token field name, login path, User‑Agent, redirect policy, etc.
+   Robust error handling: Detailed XsrfError enum covering HTTP, I/O, parsing, and login failures.
+   Well-tested: Includes unit tests, integration tests with mock servers, and a real‑world example.
+
+  
+
+Installation
+------------
+
+Add this to your Cargo.toml:
+
+    [dependencies]
+    libfetchxsrf = "0.1.0"    replace with actual version
+    
+
+The library depends on:
+
+   reqwest (blocking, cookies, form)
+   scraper
+   serde / serdejson
+   thiserror
+   url
+   log
+
+If you want to run the included real‑world example, also add:
+
+    [dev-dependencies]
+    httpmock = "0.7"
+    
+
+  
+
+Quick Start
+-----------
+
+ Fetch only a CSRF token
+
+    use libfetchxsrf::fetchtoken;
+    
+    fn main() -> libfetchxsrf::Result<()> {
+        let token = fetchtoken("https://target-site.com")?;
+        println!("CSRF Token: {}", token);
+        Ok(())
+    }
+    
+
+ Login and retrieve session data
+
+    use libfetchxsrf::{login, SessionData};
+    
+    fn main() -> libfetchxsrf::Result<()> {
+        let session: SessionData = login(
+            "https://example.com",
+            "me@example.com",
+            "s3cret"
+        )?;
+    
+        println!("Cookie header: {}", session.cookiestring);
+        Ok(())
+    }
+    
+
+ Print session in JSON format
+
+    use libfetchxsrf::{login, OutputFormat, SessionExt};
+    
+    let session = login("https://example.com", "user", "pass")?;
+    session.print(OutputFormat::Json)?;
+    
+
+  
+
+API Reference
+-------------
+
+ Top-Level Functions
+
+ fetchtoken(baseurl: &str) -> Result<String>
+
+Fetches the login page (/login by default), extracts the CSRF token from the hidden input named token, and returns it.
+
+Parameters
+
+   baseurl – Base URL of the target website (e.g., https://example.com). Trailing slash is handled automatically.
+
+Returns  
+String – The extracted CSRF token.
+
+Example
+
+    let token = fetchtoken("https://example.com")?;
+    
+
+  
+
+ login(baseurl: &str, email: &str, password: &str) -> Result<SessionData>
+
+Performs a full login:
+
+1.  GET → fetch CSRF token
+2.  POST → submit email, password, and token
+3.  Collect cookies from the Set-Cookie header
+4.  Return a SessionData object containing the token, parsed cookies, and the raw cookie string.
+
+Parameters
+
+   baseurl – Base URL of the website.
+   email – Login email/username.
+   password – Login password.
+
+Returns  
+SessionData struct (see below).
+
+Example
+
+    let session = login("https://example.com", "admin", "admin123")?;
+    
+
+  
+
+ XsrfClient
+
+The XsrfClient struct provides full control over the HTTP client and login process. It implements a builder pattern for customization.
+
+ Constructor
+
+    XsrfClient::new(baseurl: &str) -> Result<Self>
+    
+
+Creates a new client with sensible defaults:
+
+   Token field: token
+   Login path: login (relative, without leading slash)
+   Redirect policy: up to 10 hops
+   Timeout: 30 seconds
+   User‑Agent: Mozilla/5.0 (X11; Linux x86\64) AppleWebKit/537.36
+
+ Builder Methods
+
+   withtokenfield(self, field: &str) -> Self  
+    Sets the name of the hidden input field containing the CSRF token (e.g., csrfmiddlewaretoken).
+    
+   withloginpath(self, path: &str) -> Self  
+    Sets the relative login path (e.g., admin/login). Do not include a leading slash.
+    
+
+ Instance Methods
+
+    getcsrftoken(&self) -> Result<String>
+    
+
+Fetches the login page and extracts the CSRF token.
+
+    login(&self, creds: &Credentials) -> Result<SessionData>
+    
+
+Performs the login using the given credentials and returns session data.
+
+Example – Custom Django setup
+
+    let client = XsrfClient::new("https://myapp.com")?
+        .withtokenfield("csrfmiddlewaretoken")
+        .withloginpath("accounts/login/");
+    
+    let creds = Credentials::new("user", "pass");
+    let session = client.login(&creds)?;
+    
+
+  
+
+ SessionData
+
+Represents the result of a successful login.
+
+    pub struct SessionData {
+        pub csrftoken: String,
+        pub cookies: Vec<CookieInfo>,
+        pub cookiestring: String,
+    }
+    
+
+ Methods
+
+Method
+
+Signature
+
+Description
+
+tojson
+
+(&self) -> Result<String>
+
+Serializes the session to a pretty-printed JSON string.
+
+toenv
+
+(&self) -> String
+
+Formats the data as export shell variables (suitable for eval).
+
+tofile
+
+(&self, path: &str, format: &str) -> Result<()>
+
+Saves the session to a file. format can be "json", "env", or "raw".
+
+Examples
+
+    let json = session.tojson()?;            // String
+    let envvars = session.toenv();          // String for shell
+    session.tofile("session.json", "json")?; // saved to file
+    
+
+  
+
+ Credentials
+
+Simple struct holding email and password.
+
+    pub struct Credentials {
+        pub email: String,
+        pub password: String,
+    }
+    
+    impl Credentials {
+        pub fn new(email: impl Into<String>, password: impl Into<String>) -> Self { ... }
+    }
+    
+
+  
+
+ CookieInfo
+
+Represents a single cookie with metadata.
+
+    pub struct CookieInfo {
+        pub name: String,
+        pub value: String,
+        pub domain: String,
+        pub path: String,
+        pub secure: bool,
+        pub httponly: bool,
+    }
+    
+
+Note: httponly is always set to false because the client cannot reliably determine this attribute from a Set-Cookie header via the cookie jar.
+
+  
+
+ OutputFormat
+
+Enumerates the possible output modes.
+
+    pub enum OutputFormat {
+        Raw,               // human-readable token + cookie string
+        Json,              // pretty JSON of SessionData
+        Env,               // shell export statements
+        File(String),      // save to the specified path, format inferred from extension
+    }
+    
+
+  
+
+ SessionExt Trait
+
+Implemented for SessionData, it provides a single method:
+
+    fn print(&self, format: OutputFormat) -> Result<()>
+    
+
+Prints the session according to the chosen format.
+
+Example
+
+    session.print(OutputFormat::Env);   // prints export lines
+    session.print(OutputFormat::File("cookies.json".tostring())); // writes to file
+    
+
+  
+
+ Error Types
+
+All fallible functions return Result<T> (alias for std::result::Result<T, XsrfError>).
+
+    pub enum XsrfError {
+        Request(reqwest::Error),
+        UrlParse(url::ParseError),
+        TokenNotFound { field: String },
+        LoginFailed { status: reqwest::StatusCode },
+        Io(std::io::Error),
+        Serialization(serdejson::Error),
+        InvalidBody,
+    }
+    
+
+Variant
+
+Description
+
+Request
+
+Wraps an underlying reqwest error (connection, timeout, etc.)
+
+UrlParse
+
+The base URL could not be parsed
+
+TokenNotFound
+
+No input named field was found on the login page
+
+LoginFailed
+
+HTTP status of the POST was a client or server error
+
+Io
+
+File I/O error (e.g., saving session file)
+
+Serialization
+
+JSON serialization failed
+
+InvalidBody
+
+Used when an output format string is invalid
+
+Example
+
+    match login(url, email, pw) {
+        Ok(session) => { / ... / },
+        Err(XsrfError::LoginFailed { status }) => eprintln!("HTTP {status}"),
+        Err(other) => eprintln!("{other}"),
+    }
+    
+
+  
+
+Output Formats Explained
+------------------------
+
+Raw
+
+    CSRF Token: abc123
+    Cookies: laravelsession=xyz; XSRF-TOKEN=...
+    
+
+JSON
+
+    {
+      "csrftoken": "abc123",
+      "cookies": [
+        {
+          "name": "laravelsession",
+          "value": "xyz",
+          "domain": "example.com",
+          "path": "/",
+          "secure": true,
+          "httponly": false
+        }
+      ],
+      "cookiestring": "laravelsession=xyz; XSRF-TOKEN=..."
+    }
+    
+
+Env
+
+    export CSRFTOKEN="abc123"
+    export COOKIELARAVELSESSION="xyz"
+    export COOKIEXSRFTOKEN="..."
+    export COOKIESTRING="laravelsession=xyz; XSRF-TOKEN=..."
+    
+
+File  
+The tofile method automatically selects the format based on the file extension (json, env, or raw for anything else).  
+When using print(OutputFormat::File("session.json")), it infers the format from the extension and writes the file.
+
+  
+
+Customization
+-------------
+
+You can override almost everything by using XsrfClient directly.
+
+ Change the token field name
+
+    let client = XsrfClient::new(url)?
+        .withtokenfield("csrfmiddlewaretoken");
+    
+
+ Change the login URL path
+
+    let client = XsrfClient::new(url)?
+        .withloginpath("user/signin");
+    
+
+ Custom User-Agent or other request properties
+
+To do this, build the reqwest::Client yourself and pass it to XsrfClient? Currently XsrfClient::new creates its own client. If you need full control over the client, you can modify the source or wrap it – but the default should cover most needs.
+
+  
+
+Real-World Example
+------------------
+
+The repository includes a complete example that reads credentials from environment variables and performs a login.
+
+File: examples/reallogin.rs
+
+    use libfetchxsrf::{login, OutputFormat, SessionExt};
+    use std::env;
+    
+    fn main() {
+        let baseurl = env::var("BASEURL").unwraporelse(|| "https://example.com".tostring());
+        let email = env::var("EMAIL").expect("EMAIL environment variable not set");
+        let password = env::var("PASSWORD").expect("PASSWORD environment variable not set");
+    
+        println!("Attempting login to {} as {}...\n", baseurl, email);
+    
+        match login(&baseurl, &email, &password) {
+            Ok(session) => {
+                eprintln!("Login successful!\n");
+                if let Err(e) = session.print(OutputFormat::Json) {
+                    eprintln!("Failed to print session: {}", e);
+                }
+            }
+            Err(err) => {
+                eprintln!("Login failed: {}", err);
+                std::process::exit(1);
+            }
+        }
+    }
+    
+
+Run it:
+
+    EMAIL="user@example.com" PASSWORD="secret" BASEURL="https://target.com" cargo run --example reallogin
+    
+
+  
+
+Testing
+-------
+
+The project comes with three integration test files under tests/ and a unit test in parser.rs.
+
+ Integration tests
+
+   tokentests.rs – Tests CSRF token extraction using a mock HTTP server.
+   logintests.rs – Tests the complete login flow with simulated responses.
+   sessiontests.rs – Tests JSON serialisation, environment output, and file writing of SessionData.
+
+Run all tests:
+
+    cargo test
+    
+
+To see logs during tests (with httpmock verbose output), set RUSTLOG:
+
+    RUSTLOG=debug cargo test -- --nocapture
+    
+
+ Unit test
+
+    // src/parser.rs
+    [test]
+    fn testextracttoken() {
+        let html = r"<input type="hidden" name="token" value="abc123">";
+        asserteq!(extracttoken(html, "token").unwrap(), "abc123");
+    }
+    
+
+  
+
+Logging
+-------
+
+The library uses the log crate at various levels:
+
+   debug! – Details about URLs fetched.
+   warn! – Non‑success status codes on the GET request.
+
+To enable logging, add a logger implementation such as envlogger to your binary:
+
+    [dependencies]
+    envlogger = "0.11"
+    
+
+    fn main() {
+        envlogger::init();
+        // ...
+    }
+    
+
+Then run with RUSTLOG=libfetchxsrf=debug to see library logs.
+
+  
+
+License
+-------
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+  
+
+Contributing
+------------
+
+Contributions are welcome! Please open an issue or a pull request with improvements, bug fixes, or new features. Make sure to run the test suite and update the documentation accordingly.
