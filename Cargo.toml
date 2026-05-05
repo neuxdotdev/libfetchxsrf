@@ -9,7 +9,6 @@ documentation = "https://docs.rs/libfetchxsrf"
 readme = "readme"
 homepage = "https://github.com/neuxdotdev/libfetchxsrf"
 keywords = ["xsrf", "csrf", "fetch", "scraper", "http"]
-categories = ["web-programming", "http-client"]
 authors = ["neuxdotdev <neuxdev1@gmail.com>"]
 include = ["src/**/*", "readme", "license", "Cargo.toml"]   
 exclude = ["tests/*", "examples/*", ".github/*"]
